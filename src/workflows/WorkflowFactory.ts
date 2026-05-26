@@ -15,6 +15,7 @@ export enum WorkflowStatus {
 interface WorkflowStep {
     taskType: string;
     stepNumber: number;
+    dependsOn?: number; // step number of the task this depends on
 }
 
 interface WorkflowDefinition {
@@ -52,10 +53,38 @@ export class WorkflowFactory {
             task.taskType = step.taskType;
             task.stepNumber = step.stepNumber;
             task.workflow = savedWorkflow;
+
+            // Handle dependencies - map step number to actual task ID after save
+            if (step.dependsOn !== undefined) {
+                // We'll set this after all tasks are created and saved
+                // For now, store the step number to resolve later
+                (task as any)._dependsOnStepNumber = step.dependsOn;
+            }
+
             return task;
         });
 
-        await taskRepository.save(tasks);
+        // Save all tasks first to get their IDs
+        const savedTasks = await taskRepository.save(tasks);
+
+        // Now resolve dependencies by step number
+        const stepNumberToTaskId: Record<number, string> = {};
+        savedTasks.forEach((t: Task) => {
+            stepNumberToTaskId[t.stepNumber] = t.taskId;
+        });
+
+        // Update tasks with their dependencies
+        for (const task of savedTasks) {
+            const dependsOnStepNumber = (task as any)._dependsOnStepNumber;
+            if (dependsOnStepNumber !== undefined) {
+                const dependsOnTaskId = stepNumberToTaskId[dependsOnStepNumber];
+                if (dependsOnTaskId) {
+                    task.dependsOnTaskId = dependsOnTaskId;
+                }
+            }
+        }
+
+        await taskRepository.save(savedTasks);
 
         return savedWorkflow;
     }

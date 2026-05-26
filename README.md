@@ -332,3 +332,173 @@ Implement an API endpoint to retrieve the final results of a completed workflow.
   - Document the API endpoints with request and response examples.
 
 ---
+
+## New Features Documentation
+
+### New Jobs
+
+#### 1. PolygonAreaJob
+Calculates the area of a polygon from GeoJSON data using the shoelace formula.
+
+- **Task Type:** `polygonArea`
+- **Input:** GeoJSON Polygon in task.geoJson
+- **Output:** Area in square degrees
+- **Error Handling:** Validates GeoJSON structure and marks task as failed on invalid input
+
+#### 2. ReportGenerationJob
+Aggregates outputs from all tasks in a workflow into a comprehensive report.
+
+- **Task Type:** `reportGeneration`
+- **Input:** Workflow with tasks
+- **Output:** JSON report containing task results, errors, and summary
+- **Error Handling:** Includes error information for failed tasks in the report
+
+### Workflow Dependencies
+
+Workflows can now define task dependencies using the `dependsOn` field in the YAML configuration.
+
+#### YAML Format with Dependencies
+```yaml
+name: "workflow_with_dependencies"
+steps:
+  - taskType: "polygonArea"
+    stepNumber: 1
+  - taskType: "analysis"
+    stepNumber: 2
+    dependsOn: 1  # Depends on step 1
+  - taskType: "reportGeneration"
+    stepNumber: 3
+    dependsOn: 2  # Depends on step 2
+```
+
+#### Dependency Resolution
+- Tasks with dependencies will not execute until their dependencies are completed
+- If a dependency fails, dependent tasks will remain in queued state
+- The worker checks dependencies before executing each task
+
+### Workflow Final Results
+
+When a workflow completes successfully, the `finalResult` field is populated with aggregated results from all tasks.
+
+#### Final Result Structure
+```json
+{
+  "workflowId": "workflow-uuid",
+  "totalTasks": 3,
+  "completedTasks": 3,
+  "failedTasks": 0,
+  "results": [
+    {
+      "taskId": "task-uuid-1",
+      "taskType": "polygonArea",
+      "stepNumber": 1,
+      "output": { "area": 1234.56 }
+    },
+    {
+      "taskId": "task-uuid-2",
+      "taskType": "analysis",
+      "stepNumber": 2,
+      "output": "Germany"
+    }
+  ]
+}
+```
+
+### New API Endpoints
+
+#### GET /workflow/:id/status
+Retrieves the current status of a workflow.
+
+**Response:**
+```json
+{
+  "workflowId": "3433c76d-f226-4c91-afb5-7dfc7accab24",
+  "status": "in_progress",
+  "completedTasks": 3,
+  "totalTasks": 5
+}
+```
+
+**Error Responses:**
+- `404` - Workflow not found
+- `500` - Server error
+
+#### GET /workflow/:id/results
+Retrieves the final results of a completed workflow.
+
+**Response:**
+```json
+{
+  "workflowId": "3433c76d-f226-4c91-afb5-7dfc7accab24",
+  "status": "completed",
+  "finalResult": {
+    "workflowId": "3433c76d-f226-4c91-afb5-7dfc7accab24",
+    "totalTasks": 5,
+    "completedTasks": 5,
+    "failedTasks": 0,
+    "results": [...]
+  }
+}
+```
+
+**Error Responses:**
+- `404` - Workflow not found
+- `400` - Workflow is not yet completed
+- `500` - Server error
+
+### Testing the New Features
+
+#### Test PolygonAreaJob
+Create a workflow YAML file:
+```yaml
+name: "polygon_area_test"
+steps:
+  - taskType: "polygonArea"
+    stepNumber: 1
+```
+
+Send a POST request:
+```bash
+curl -X POST http://localhost:3000/analysis \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientId": "test123",
+    "geoJson": {
+      "type": "Polygon",
+      "coordinates": [[
+        [-63.624885, -10.311050],
+        [-63.624885, -10.367865],
+        [-63.612783, -10.367865],
+        [-63.612783, -10.311050],
+        [-63.624885, -10.311050]
+      ]]
+    }
+  }'
+```
+
+#### Test Workflow with Dependencies
+Create a workflow YAML file:
+```yaml
+name: "dependency_test"
+steps:
+  - taskType: "polygonArea"
+    stepNumber: 1
+  - taskType: "analysis"
+    stepNumber: 2
+    dependsOn: 1
+  - taskType: "reportGeneration"
+    stepNumber: 3
+    dependsOn: 2
+```
+
+#### Test Status Endpoint
+```bash
+curl http://localhost:3000/workflow/{workflow-id}/status
+```
+
+#### Test Results Endpoint
+```bash
+curl http://localhost:3000/workflow/{workflow-id}/results
+```
+
+---
